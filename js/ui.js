@@ -287,7 +287,7 @@ async function abrirNotificacoes(bSino, perfil) {
 
 // ---------------------------------------------------------------- campo de texto com contador e salvamento
 // Salva sozinho depois de uma pausa e também pelo botão "Salvar".
-export function campoTexto({ valor, aoSalvar, linhas = 8, placeholder = "", nota = true, formatacao = false }) {
+export function campoTexto({ valor, aoSalvar, linhas = 8, placeholder = "", nota = false, formatacao = false }) {
   const caixa = el(`<div class="campo-texto">
     ${nota || formatacao ? `<div class="ferramentas">
       ${formatacao ? '<button type="button" class="botao pequeno" data-f="neg" title="Negrito"><b>N</b></button><button type="button" class="botao pequeno" data-f="ita" title="Itálico"><i>I</i></button>' : ""}
@@ -295,30 +295,33 @@ export function campoTexto({ valor, aoSalvar, linhas = 8, placeholder = "", nota
     </div>` : ""}
     <textarea class="campo" rows="${linhas}" placeholder="${esc(placeholder)}"></textarea>
     <div class="campo-rodape"><span class="estado"></span><span class="contador">0 palavras</span>
-      <button type="button" class="botao primario pequeno salvar">Salvar</button></div></div>`);
-  const ta = $("textarea", caixa), est = $(".estado", caixa), cont = $(".contador", caixa);
+      <button type="button" class="botao primario pequeno salvar" disabled>Salvar</button></div></div>`);
+  const ta = $("textarea", caixa), est = $(".estado", caixa), cont = $(".contador", caixa), bt = $(".salvar", caixa);
   ta.value = valor || "";
-  let salvo = ta.value, tempo = null;
+  let salvo = ta.value, tempo = null, salvando = false;
+  // Botão cinza e travado enquanto não houver nada novo para salvar
+  const marcarBotao = () => { bt.disabled = salvando || ta.value === salvo; };
   const contar = () => { const n = palavras(ta.value); cont.textContent = `${n} ${n === 1 ? "palavra" : "palavras"}`; };
   const salvar = async () => {
     clearTimeout(tempo);
-    if (ta.value === salvo) { est.textContent = "Salvo ✓"; return; }
+    if (ta.value === salvo || salvando) { marcarBotao(); return; }
     const v = ta.value;
+    salvando = true; marcarBotao();
     est.textContent = "Salvando…";
     try { await aoSalvar(v); salvo = v; est.textContent = "Salvo ✓"; }
     catch (e) { est.textContent = "Não salvou"; erro(e); }
+    salvando = false; marcarBotao();
+    if (ta.value !== salvo) { est.textContent = "Alterações não salvas"; tempo = setTimeout(salvar, 1500); }
   };
-  ta.addEventListener("input", () => { contar(); est.textContent = "Alterações não salvas"; clearTimeout(tempo); tempo = setTimeout(salvar, 1500); });
+  ta.addEventListener("input", () => { contar(); marcarBotao(); est.textContent = ta.value === salvo ? "Salvo ✓" : "Alterações não salvas"; clearTimeout(tempo); tempo = setTimeout(salvar, 1500); });
   ta.addEventListener("blur", () => { if (ta.value !== salvo) salvar(); });
-  $(".salvar", caixa).onclick = salvar;
+  bt.onclick = salvar;
   $$("[data-f]", caixa).forEach((b) => (b.onclick = async () => {
     const f = b.dataset.f, s = ta.selectionStart, e = ta.selectionEnd, sel = ta.value.slice(s, e);
-    let ins;
     if (f === "nota") {
       const t = await pedirTexto("Nota de rodapé", "Texto da nota (ex.: a fonte do dado, com endereço e data de acesso):", "", true);
       if (!t) return;
-      ins = `[[nota: ${t.replace(/\]\]/g, "]")}]]`;
-      ta.setRangeText(ins, e, e, "end");
+      ta.setRangeText(`[[nota: ${t.replace(/\]\]/g, "]")}]]`, e, e, "end");
     } else {
       const m = f === "neg" ? "**" : "*";
       ta.setRangeText(m + (sel || "texto") + m, s, e, "end");
@@ -329,6 +332,17 @@ export function campoTexto({ valor, aoSalvar, linhas = 8, placeholder = "", nota
   caixa.salvar = salvar;
   caixa.pendente = () => ta.value !== salvo;
   return caixa;
+}
+
+// Liga um botão "Salvar" a um formulário: cinza e travado até alguma coisa mudar
+export function travarAteMudar(form, botao) {
+  const foto = () => JSON.stringify([...form.querySelectorAll("input, select, textarea")].map((i) => (i.type === "checkbox" ? i.checked : i.value)));
+  let base = foto();
+  const ver = () => { botao.disabled = foto() === base; };
+  form.addEventListener("input", ver);
+  form.addEventListener("change", ver);
+  ver();
+  return { salvo() { base = foto(); ver(); } };
 }
 
 export function pedirTexto(titulo, rotulo, valor = "", area = false) {

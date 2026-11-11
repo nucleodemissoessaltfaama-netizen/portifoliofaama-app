@@ -110,6 +110,7 @@ textarea.campo { resize: vertical; line-height: 1.55; }
 }
 .botao:hover { background: #f6f6fb; }
 .botao:disabled { opacity: .55; cursor: default; }
+.botao.primario:disabled { opacity: 1; background: #c4c5d2; border-color: #c4c5d2; color: #fff; cursor: not-allowed; }
 .botao.primario { background: var(--azul); border-color: var(--azul); color: #fff; }
 .botao.primario:hover { background: #2410c4; }
 .botao.escuro { background: var(--azul-escuro); border-color: var(--azul-escuro); color: #fff; }
@@ -270,6 +271,9 @@ table.quadro { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .previa-barra { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--azul-escuro); color: #fff; flex-wrap: wrap; }
 .previa-barra h3 { font-size: 16px; flex: 1; }
 .previa-barra small { opacity: .8; }
+.fechar-x { width: 40px; height: 40px; border-radius: 10px; border: 0; background: #d93025; color: #fff; font-size: 20px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.fechar-x:hover { background: #b3261e; }
+.selo-fixo { font-size: 11.5px; font-weight: 700; color: #6b4e00; background: #fff3cd; border-radius: 8px; padding: 2px 8px; white-space: nowrap; }
 .previa-folhas { flex: 1; overflow: auto; padding: 20px 10px 40px; }
 .previa-aguarde { color: #fff; text-align: center; padding: 40px; }
 

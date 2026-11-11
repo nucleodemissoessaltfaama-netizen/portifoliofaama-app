@@ -4,7 +4,15 @@ import {
   fmtData, fmtCurta, fmtMin, dataExtenso, comprimir, escolherArquivo, protegerSaida,
 } from "./ui.js";
 import { DICAS, PERGUNTAS, textoSecao2, textoSecao22 } from "./textos.js";
-import { carregarDados, numerarFiguras, organizar, linhasQuadro } from "./documento.js";
+import { carregarDados, numerarFiguras, organizar, linhasQuadro, ehFixo, LOCAIS_IGREJA } from "./documento.js";
+
+// Notas de rodapé só na Introdução, na Caracterização até o 2.1.1 e na Conclusão
+const COM_NOTA = new Set(["introducao", "perfil_discente", "caract_campo", "caract_cidade", "conclusao"]);
+const FOTOS_IGREJA = {
+  mapa: { titulo: "Print do Google Maps", texto: "Localização da igreja", sup: "Print da tela do Google Maps" },
+  interna: { titulo: "Foto de dentro da igreja", texto: "Imagem interna da igreja de prática", sup: "Imagem interna da igreja" },
+  frente: { titulo: "Foto da frente da igreja", texto: "Imagem da frente da igreja de prática", sup: "Imagem da frente da igreja" },
+};
 
 if (!logado()) location.replace("index.html");
 
@@ -51,7 +59,7 @@ const cheio = (t) => String(t || "").trim().length > 0;
 function percentuais() {
   const p = D.portfolio, f = D.figuras;
   const b1 = [p.introducao, p.perfil_discente].filter(cheio).length / 2;
-  const itens2 = [p.campo_nome, p.caract_campo, p.caract_cidade, p.igreja_texto, f.some((x) => x.local === "mapa"), f.some((x) => x.local === "igreja"), p.organograma_desc, p.organograma_url];
+  const itens2 = [p.campo_nome, p.caract_campo, p.caract_cidade, p.igreja_texto, ...LOCAIS_IGREJA.map((l) => f.some((x) => x.local === l)), p.organograma_desc, p.organograma_url];
   const b2 = itens2.filter((x) => (typeof x === "boolean" ? x : cheio(x))).length / itens2.length;
   const ativos = D.requisitos.filter((r) => !r.arquivado);
   let pedidos = 0, feitos = 0;
@@ -105,7 +113,7 @@ function itemTexto(num, titulo, campo, { dica = DICAS[campo], ajuda = "", linhas
   const dt = $(".botao-dica", it);
   if (dt) dt.onclick = () => janela({ titulo: "Dica — " + titulo, corpo: `<p>${esc(dica)}</p>` });
   const c = campoTexto({
-    valor: D.portfolio[campo], linhas,
+    valor: D.portfolio[campo], linhas, nota: COM_NOTA.has(campo),
     aoSalvar: async (v) => { await db.upd("portfolios", { id: `eq.${D.portfolio.id}` }, { [campo]: v }); D.portfolio[campo] = v; atualizarPercentuais(); },
   });
   campos.push(c);
@@ -128,7 +136,7 @@ function bloco2() {
   c.innerHTML = "";
   const auto = el(`<div class="item"><div class="item-cab"><h3><span class="n">2</span>Atividades desenvolvidas</h3></div>
     <div class="texto-auto"><span class="rot">Texto automático</span><span id="auto-s2"></span></div></div>`);
-  $("#auto-s2", auto).textContent = textoSecao2(D.dias.length);
+  $("#auto-s2", auto).textContent = textoSecao2(organizar(D).diasDoc.length);
 
   const campo = el(`<div class="item"><div class="item-cab"><h3><span class="n">2.1</span>Caracterização do campo</h3>
     <button class="botao-dica">💡 Dica</button></div>
@@ -150,16 +158,14 @@ function bloco2() {
   inp.oninput = () => { clearTimeout(t); t = setTimeout(salvarNome, 1200); };
   inp.onblur = salvarNome;
   const cc = campoTexto({
-    valor: D.portfolio.caract_campo, linhas: 9,
+    valor: D.portfolio.caract_campo, linhas: 9, nota: true,
     aoSalvar: async (v) => { await db.upd("portfolios", { id: `eq.${D.portfolio.id}` }, { caract_campo: v }); D.portfolio.caract_campo = v; atualizarPercentuais(); },
   });
   campos.push(cc); campo.append(cc);
 
   const cidade = itemTexto("2.1.1", "Caracterização sócio-política, econômica, demográfica e religiosa da cidade/bairro onde foi realizado a prática pastoral", "caract_cidade");
-  const figCid = el(`<div><div class="figuras" id="figs-cidade"></div></div>`);
-  cidade.append(figCid);
 
-  const igreja = itemTexto("2.1.1.1", "Igreja de apoio ou igreja base", "igreja_texto", { ajuda: "Descreva a igreja de apoio. Abaixo do texto ficam as figuras: o print do Google Maps e as fotos de dentro e da frente da igreja (lado a lado)." });
+  const igreja = itemTexto("2.1.1.1", "Igreja de apoio ou igreja base", "igreja_texto", { ajuda: "Descreva a igreja de apoio. Abaixo do texto ficam as três figuras: o print do Google Maps, a foto de dentro e a foto da frente da igreja." });
   igreja.append(el(`<div class="figuras" id="figs-igreja"></div>`));
 
   const org = itemTexto("2.1.1.2", "Organograma", "organograma_desc", { ajuda: "Antes do organograma, descreva a estrutura administrativa da sua igreja.", linhas: 6 });
@@ -175,9 +181,9 @@ function rotFig(f) {
   return { sup: `Figura ${n}. ${f.legenda_sup}`, inf: `Fonte ${n}. ${f.legenda_inf}` };
 }
 
-function cartaoFigura(f, { trocar = true } = {}) {
+function cartaoFigura(f, { trocar = true, rotulo = "" } = {}) {
   const r = rotFig(f);
-  const c = el(`<div class="figura"><div class="rot-fig">${esc(r.sup)}</div>
+  const c = el(`<div class="figura">${rotulo ? `<div class="leve" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">${esc(rotulo)}</div>` : ""}<div class="rot-fig">${esc(r.sup)}</div>
     <div class="imgs">${[f.url, f.url2].filter(Boolean).map((u) => `<img src="${esc(u)}" alt="" loading="lazy">`).join("")}</div>
     <p class="leg">${esc(r.inf)}</p>
     <span class="acoes-mini"><button data-a="legenda" title="Editar legendas">✏️</button>${trocar ? '<button data-a="trocar" title="Trocar foto">🔄</button>' : ""}<button data-a="excluir" title="Excluir">🗑</button></span></div>`);
@@ -208,31 +214,28 @@ function redesenharFiguras() {
 }
 
 function desenharFigurasB2() {
-  const cid = $("#figs-cidade");
-  if (!cid) return;
-  cid.innerHTML = "";
-  D.figuras.filter((f) => f.local === "cidade").forEach((f) => cid.append(cartaoFigura(f)));
-  cid.append(vaga("Adicionar figura", "Mapa, foto, tabela ou gráfico (como imagem)", () => novaFigura("cidade")));
   const ig = $("#figs-igreja");
+  if (!ig) return;
   ig.innerHTML = "";
-  const mapa = D.figuras.find((f) => f.local === "mapa"), igr = D.figuras.find((f) => f.local === "igreja");
-  ig.append(mapa ? cartaoFigura(mapa) : vaga("Print do Google Maps", "Localização da igreja", () => novaFigura("mapa")));
-  ig.append(igr ? cartaoFigura(igr) : vaga("Fotos da igreja", "Foto de dentro e foto da frente, lado a lado", () => novaFigura("igreja")));
+  for (const l of LOCAIS_IGREJA) {
+    const f = D.figuras.find((x) => x.local === l), info = FOTOS_IGREJA[l];
+    ig.append(f ? cartaoFigura(f, { rotulo: info.titulo }) : vaga(info.titulo, info.texto, () => novaFigura(l)));
+  }
 }
 
 // Janela de foto: escolher arquivo(s) + legenda superior e inferior
 async function formFigura(local, f = null, soTrocar = false) {
-  const dupla = local === "igreja";
+  const dupla = false;
   const n = f ? numerarFiguras(D).get(f.id) : "N";
   const corpo = el(`<div>
-    <div class="grade2">${(dupla ? ["Foto de dentro da igreja", "Foto da frente da igreja"] : [local === "mapa" ? "Print do Google Maps" : "Imagem"]).map((r, i) => `
+    <div class="grade2">${[FOTOS_IGREJA[local]?.titulo || "Foto"].map((r, i) => `
       <div><label class="rotulo">${r}</label><div class="figura vazia escolher" data-i="${i}" style="min-height:140px">${f && [f.url, f.url2][i] ? `<img src="${esc([f.url, f.url2][i])}" style="max-width:100%;max-height:130px;border-radius:6px">` : "<b>＋ Escolher imagem</b>"}</div></div>`).join("")}</div>
     <label class="rotulo">Legenda de cima</label>
-    <div style="display:flex;gap:6px;align-items:center"><b style="white-space:nowrap">Figura ${n}.</b><input class="campo sup" placeholder="${local === "mapa" ? "Print da tela do Google Maps" : dupla ? "Imagens da Igreja Central de …" : "Descrição da imagem"}"></div>
+    <div style="display:flex;gap:6px;align-items:center"><b style="white-space:nowrap">Figura ${n}.</b><input class="campo sup" placeholder="${FOTOS_IGREJA[local]?.sup || "Descrição da foto"}"></div>
     <label class="rotulo">Legenda de baixo</label>
     <div style="display:flex;gap:6px;align-items:center"><b style="white-space:nowrap">Fonte ${n}.</b><input class="campo inf"></div>
     <p class="dica-campo">O número da figura é colocado automaticamente, na ordem em que ela aparece no trabalho.</p></div>`);
-  $(".sup", corpo).value = f?.legenda_sup ?? (local === "mapa" ? "Print da tela do Google Maps" : "");
+  $(".sup", corpo).value = f?.legenda_sup ?? (local === "mapa" ? FOTOS_IGREJA.mapa.sup : "");
   $(".inf", corpo).value = f?.legenda_inf ?? "Arquivo Pessoal.";
   const arquivos = [null, null];
   $$(".escolher", corpo).forEach((v) => (v.onclick = async () => {
@@ -303,19 +306,24 @@ function desenharOrganograma() {
 }
 
 // ------------------------------------------------------------------ bloco 3
-function minutosDoDia(d) { return D.atividades.filter((a) => a.dia_id === d.id).reduce((s, a) => s + a.minutos, 0); }
+// Total do dia sem a confecção do portfólio (que não é atividade do dia)
+function minutosDoDia(d) {
+  return D.atividades.filter((a) => a.dia_id === d.id && !ehFixo(D.requisitos.find((r) => r.id === a.requisito_id))).reduce((s, a) => s + a.minutos, 0);
+}
 
 function bloco3() {
   const c = $("#b3 .bloco-corpo");
   const { dias } = organizar(D);
   if (!diaSel || !dias.some((d) => d.id === diaSel)) diaSel = dias[dias.length - 1]?.id || null;
   c.innerHTML = `<div class="item"><div class="item-cab"><h3><span class="n">2.2</span>Atividades desenvolvidas pelo estagiário</h3></div>
-    <div class="texto-auto"><span class="rot">Texto automático</span>${esc(textoSecao22(dias.length))}</div></div>
+    <div class="texto-auto"><span class="rot">Texto automático</span>${esc(textoSecao22(organizar(D).diasDoc.length))}</div></div>
     <div class="item"><div class="faixa-dias" id="faixa-dias"></div><div id="painel-dia"></div></div>`;
   const f = $("#faixa-dias", c);
-  dias.forEach((d, i) => {
+  const { diasDoc } = organizar(D);
+  dias.forEach((d) => {
+    const i = diasDoc.indexOf(d);
     const ch = el(`<button class="dia-chip ${d.id === diaSel ? "ativo" : ""}"><span class="horas">${fmtMin(minutosDoDia(d))}</span>
-      <small>2.2.${i + 1}</small><b>Dia ${fmtCurta(d.data)}</b></button>`);
+      <small>${i >= 0 ? "2.2." + (i + 1) : "&nbsp;"}</small><b>Dia ${fmtCurta(d.data)}</b></button>`);
     ch.onclick = () => { diaSel = d.id; bloco3(); };
     f.append(ch);
   });
@@ -345,7 +353,7 @@ async function novoDia() {
   } catch (e) { erro(e); }
 }
 
-function bloco2Auto() { const s = $("#auto-s2"); if (s) s.textContent = textoSecao2(D.dias.length); }
+function bloco2Auto() { const s = $("#auto-s2"); if (s) s.textContent = textoSecao2(organizar(D).diasDoc.length); }
 
 function desenharDia() {
   const painel = $("#painel-dia");
@@ -353,8 +361,9 @@ function desenharDia() {
   const { dias } = organizar(D);
   const d = dias.find((x) => x.id === diaSel);
   if (!d) { painel.innerHTML = '<p class="vazio">Adicione o primeiro dia de prática para lançar os requisitos cumpridos.</p>'; return; }
-  const idx = dias.indexOf(d) + 1;
+  const idx = organizar(D).diasDoc.indexOf(d) + 1 || "–";
   const ativs = organizar(D).ativPorDia.get(d.id) || [];
+  const fixasDia = D.atividades.filter((a) => a.dia_id === d.id && ehFixo(D.requisitos.find((r) => r.id === a.requisito_id)));
   const fotos = D.figuras.filter((f) => f.local === "dia" && f.dia_id === d.id).sort((a, b) => a.ordem - b.ordem);
   painel.className = "painel-dia";
   painel.innerHTML = `<div class="painel-dia-cab"><div><small class="leve">2.2.${idx}</small><h3 style="font-size:16px">Dia ${esc(dataExtenso(d.data))}</h3>
@@ -366,7 +375,20 @@ function desenharDia() {
     <div class="linha-botoes"><button class="botao add-foto">📷 Adicionar foto</button></div>
     <div id="fotos-dia" hidden></div>`;
   const lista = $("#lista-ativ", painel);
-  lista.innerHTML = ativs.length ? "" : '<p class="vazio">Nenhum requisito lançado neste dia.</p>';
+  lista.innerHTML = ativs.length || fixasDia.length ? "" : '<p class="vazio">Nenhum requisito lançado neste dia.</p>';
+  fixasDia.forEach((a) => {
+    const r = D.requisitos.find((x) => x.id === a.requisito_id);
+    const card = el(`<div class="atividade"><div class="atividade-cab"><span class="texto">${esc(r.enunciado)}</span>
+      <span class="selo-fixo">só no quadro-resumo</span><span class="tempo">${fmtMin(a.minutos)}</span>
+      <span class="acoes-mini"><button data-a="editar" title="Editar">✏️</button><button data-a="excluir" title="Excluir">🗑</button></span></div></div>`);
+    $('[data-a="editar"]', card).onclick = () => formAtividade(d, a);
+    $('[data-a="excluir"]', card).onclick = async () => {
+      if (!(await confirmar("Excluir as horas de confecção do portfólio?", "Excluir", true))) return;
+      try { await db.del("atividades", { id: `eq.${a.id}` }); D.atividades = D.atividades.filter((x) => x !== a); bloco3(); atualizarPercentuais(); }
+      catch (e) { erro(e); }
+    };
+    lista.append(card);
+  });
   ativs.forEach((a, k) => {
     const r = D.requisitos.find((x) => x.id === a.requisito_id);
     const faltam = PERGUNTAS.filter(([c]) => !cheio(a[c])).length;
@@ -422,17 +444,18 @@ async function formAtividade(dia, a = null) {
   const opcoes = D.requisitos.filter((r) => !r.arquivado || r.id === a?.requisito_id).map((r) => {
     const u = usados(r.id), cheioR = r.quantidade && u >= r.quantidade, jaNoDia = noDia.has(r.id);
     const info = r.quantidade ? `${u}/${r.quantidade}` : `${u}× · todos os dias`;
-    return `<option value="${r.id}" ${(cheioR || jaNoDia) && r.id !== a?.requisito_id ? "disabled" : ""}>${esc(r.enunciado)} (${info}${cheioR ? " · completo" : jaNoDia ? " · já neste dia" : ""})</option>`;
+    return `<option value="${r.id}" ${(cheioR || jaNoDia) && r.id !== a?.requisito_id ? "disabled" : ""}>${esc(r.enunciado)}${ehFixo(r) ? " — só as horas" : ""} (${info}${cheioR ? " · completo" : jaNoDia ? " · já neste dia" : ""})</option>`;
   });
   const corpo = el(`<div>
     <label class="rotulo">Requisito cumprido <span class="obrig">*</span></label>
     <select class="campo req"><option value="">Selecione o requisito…</option>${opcoes.join("")}</select>
     <label class="rotulo">Quantidade de horas / minutos gastos nessa atividade <span class="obrig">*</span></label>
-    <div style="display:flex;gap:8px;align-items:center"><input type="number" min="0" max="24" class="campo hh" style="width:90px" placeholder="0"> h
+    <div style="display:flex;gap:8px;align-items:center"><input type="number" min="0" class="campo hh" style="width:90px" placeholder="0"> h
       <input type="number" min="0" max="59" step="5" class="campo mm" style="width:90px" placeholder="0"> min</div>
-    ${PERGUNTAS.map(([c, rot]) => `<label class="rotulo">${rot}</label><textarea class="campo" data-c="${c}" rows="4"></textarea>
-      <div class="campo-rodape"><span class="estado"></span><button type="button" class="botao pequeno nota" data-c="${c}">¹ Nota</button><span class="contador" data-c="${c}">0 palavras</span></div>`).join("")}
-    <p class="dica-campo">Pode salvar mesmo com respostas em branco e completar depois. No arquivo final, as perguntas em branco aparecem assim mesmo.</p></div>`);
+    <div class="caixa-info so-fixo" hidden>Este requisito pede só as horas que você levou para confeccionar o portfólio. Ele não entra nos dias de prática: aparece apenas no quadro-resumo.</div>
+    <div class="perguntas">${PERGUNTAS.map(([c, rot]) => `<label class="rotulo">${rot}</label><textarea class="campo" data-c="${c}" rows="4"></textarea>
+      <div class="campo-rodape"><span class="estado"></span><span class="contador" data-c="${c}">0 palavras</span></div>`).join("")}
+    <p class="dica-campo">Pode salvar mesmo com respostas em branco e completar depois. No arquivo final, as perguntas em branco aparecem assim mesmo.</p></div></div>`);
   const sel = $(".req", corpo);
   if (a) { sel.value = a.requisito_id; $(".hh", corpo).value = Math.floor(a.minutos / 60); $(".mm", corpo).value = a.minutos % 60; }
   for (const [c] of PERGUNTAS) {
@@ -440,11 +463,12 @@ async function formAtividade(dia, a = null) {
     ta.value = a?.[c] || "";
     const contar = () => { const n = palavras(ta.value); ct.textContent = `${n} ${n === 1 ? "palavra" : "palavras"}`; };
     ta.oninput = contar; contar();
-    $(`.nota[data-c="${c}"]`, corpo).onclick = async () => {
-      const t = await pedirTexto("Nota de rodapé", "Texto da nota:", "", true);
-      if (t) { ta.setRangeText(`[[nota: ${t}]]`, ta.selectionEnd, ta.selectionEnd, "end"); contar(); }
-    };
   }
+  const verFixo = () => {
+    const fixo = ehFixo(D.requisitos.find((r) => r.id === sel.value));
+    $(".perguntas", corpo).hidden = fixo; $(".so-fixo", corpo).hidden = !fixo;
+  };
+  sel.addEventListener("change", verFixo); verFixo();
   await janela({
     titulo: a ? "Editar requisito cumprido" : "Novo requisito cumprido", corpo, larga: true, fixa: true,
     botoes: [{ rotulo: "Cancelar", valor: null }, {
@@ -454,7 +478,8 @@ async function formAtividade(dia, a = null) {
         const min = (parseInt($(".hh", corpo).value || "0", 10) * 60) + parseInt($(".mm", corpo).value || "0", 10);
         if (!(min > 0)) throw new Error("Informe quanto tempo a atividade levou.");
         const dados = { requisito_id: rid, minutos: min };
-        for (const [c] of PERGUNTAS) dados[c] = $(`textarea[data-c="${c}"]`, corpo).value.trim();
+        const fixo = ehFixo(D.requisitos.find((r) => r.id === rid));
+        for (const [c] of PERGUNTAS) dados[c] = fixo ? "" : $(`textarea[data-c="${c}"]`, corpo).value.trim();
         if (a) Object.assign(a, await db.upd("atividades", { id: `eq.${a.id}` }, dados));
         else D.atividades.push(await db.ins("atividades", { dia_id: dia.id, ...dados }));
         bloco3(); atualizarPercentuais();

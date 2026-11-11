@@ -24,24 +24,29 @@ export function runs(texto) {
 
 const paragrafos = (t) => String(t || "").split(/\n+/).map((s) => s.trim()).filter(Boolean);
 
-// Ordem cronológica dos dias e das atividades
+// Requisito automático "Confecção do portfólio": só horas, aparece só no quadro
+export const ehFixo = (r) => !!r?.fixo;
+
+// Ordem cronológica dos dias e das atividades.
+// diasDoc = dias que entram no trabalho (têm atividade com texto ou foto).
 export function organizar(dados) {
   const dias = [...dados.dias].sort((a, b) => a.data.localeCompare(b.data));
+  const fixos = new Set(dados.requisitos.filter(ehFixo).map((r) => r.id));
   const ordemReq = new Map(dados.requisitos.map((r, i) => [r.id, i]));
   const ativPorDia = new Map(dias.map((d) => [d.id, dados.atividades
-    .filter((a) => a.dia_id === d.id)
+    .filter((a) => a.dia_id === d.id && !fixos.has(a.requisito_id))
     .sort((a, b) => a.criado_em.localeCompare(b.criado_em) || (ordemReq.get(a.requisito_id) - ordemReq.get(b.requisito_id)))]));
-  return { dias, ativPorDia };
+  const diasDoc = dias.filter((d) => ativPorDia.get(d.id).length || dados.figuras.some((f) => f.local === "dia" && f.dia_id === d.id));
+  return { dias, diasDoc, ativPorDia };
 }
 
 // Números das figuras na ordem em que aparecem no trabalho
+export const LOCAIS_IGREJA = ["mapa", "interna", "frente"];
 export function numerarFiguras(dados) {
-  const { dias } = organizar(dados);
+  const { diasDoc } = organizar(dados);
   const ordem = [
-    ...dados.figuras.filter((f) => f.local === "cidade").sort(porOrdem),
-    ...dados.figuras.filter((f) => f.local === "mapa"),
-    ...dados.figuras.filter((f) => f.local === "igreja"),
-    ...dias.flatMap((d) => dados.figuras.filter((f) => f.local === "dia" && f.dia_id === d.id).sort(porOrdem)),
+    ...LOCAIS_IGREJA.flatMap((l) => dados.figuras.filter((f) => f.local === l)),
+    ...diasDoc.flatMap((d) => dados.figuras.filter((f) => f.local === "dia" && f.dia_id === d.id).sort(porOrdem)),
   ];
   return new Map(ordem.map((f, i) => [f.id, i + 1]));
 }
@@ -52,17 +57,16 @@ export function linhasQuadro(dados) {
   for (const a of dados.atividades) minutos.set(a.requisito_id, (minutos.get(a.requisito_id) || 0) + a.minutos);
   const d = dados.disciplina;
   const periodo = d.inicio && d.fim ? `${fmtData(d.inicio)} a ${fmtData(d.fim)}` : "–";
-  const linhas = dados.requisitos.filter((r) => minutos.get(r.id))
-    .map((r) => ({ atividade: r.enunciado, periodo, horas: horasQuadro(minutos.get(r.id)), min: minutos.get(r.id) }));
-  const rel = Number(d.horas_relatorio || 0);
-  if (rel > 0) linhas.push({ atividade: "Confecção de Relatório", periodo: "-", horas: horasQuadro(rel * 60), min: rel * 60 });
+  const reqs = [...dados.requisitos.filter((r) => !ehFixo(r)), ...dados.requisitos.filter(ehFixo)];
+  const linhas = reqs.filter((r) => minutos.get(r.id))
+    .map((r) => ({ atividade: r.enunciado, periodo: ehFixo(r) ? "-" : periodo, horas: horasQuadro(minutos.get(r.id)), min: minutos.get(r.id) }));
   const total = linhas.reduce((s, l) => s + l.min, 0);
   return { linhas, total: horasQuadro(total), totalMin: total };
 }
 
 export function montar(dados) {
   const { perfil, disciplina: disc, portfolio: p } = dados;
-  const { dias, ativPorDia } = organizar(dados);
+  const { diasDoc: dias, ativPorDia } = organizar(dados);
   const numFig = numerarFiguras(dados);
   const reqPorId = new Map(dados.requisitos.map((r) => [r.id, r]));
   const corpo = [];
@@ -96,11 +100,9 @@ export function montar(dados) {
   ps(p.caract_campo);
   h(3, "2.1.1.", "Caracterização sócio-política, econômica, demográfica e religiosa da cidade/bairro onde foi realizado a prática pastoral");
   ps(p.caract_cidade);
-  dados.figuras.filter((f) => f.local === "cidade").sort(porOrdem).forEach(fig);
   h(4, "2.1.1.1.", "Igreja de apoio ou igreja base");
   ps(p.igreja_texto);
-  dados.figuras.filter((f) => f.local === "mapa").forEach(fig);
-  dados.figuras.filter((f) => f.local === "igreja").forEach(fig);
+  LOCAIS_IGREJA.forEach((l) => dados.figuras.filter((f) => f.local === l).forEach(fig));
   h(4, "2.1.1.2.", "Organograma da igreja de apoio ou igreja base");
   ps(p.organograma_desc);
   if (p.organograma_url) corpo.push({ t: "img", url: p.organograma_url });
@@ -161,6 +163,7 @@ export function montar(dados) {
 // Carrega tudo o que o documento precisa
 export async function carregarDados(db, perfil) {
   const disciplina = await db.um("disciplinas", { id: `eq.${perfil.disciplina_id}` });
+  if (!disciplina) throw new Error("Disciplina não encontrada. Fale com o administrador.");
   const portfolio = await db.um("portfolios", { aluno_id: `eq.${perfil.id}`, disciplina_id: `eq.${perfil.disciplina_id}` });
   const [requisitos, dias, figuras, referencias, config] = await Promise.all([
     db.sel("requisitos", { disciplina_id: `eq.${disciplina.id}`, order: "ordem.asc,criado_em.asc" }),
@@ -169,6 +172,7 @@ export async function carregarDados(db, perfil) {
     db.sel("referencias", { portfolio_id: `eq.${portfolio.id}`, order: "criado_em.asc" }),
     db.um("config", { id: "eq.1" }),
   ]);
+  requisitos.sort((a, b) => ehFixo(a) - ehFixo(b));   // o automático sempre por último
   const atividades = dias.length ? await db.sel("atividades", { dia_id: `in.(${dias.map((d) => d.id).join(",")})`, order: "criado_em.asc" }) : [];
   return { perfil, disciplina, portfolio, requisitos, dias, atividades, figuras, referencias, orientador: config?.orientador || "" };
 }

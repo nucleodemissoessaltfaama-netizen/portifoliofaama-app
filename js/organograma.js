@@ -51,9 +51,9 @@ export function abrirEditor({ json, aoSalvar }) {
   const AJUDAS = {
     sel: "Toque num cabeçalho ou numa linha para selecionar. Arraste para mover. Toque duas vezes num cabeçalho para editar o texto. Arraste o fundo para rolar.",
     no: "Toque no quadro branco onde o cabeçalho deve ficar.",
-    linha: "Toque no primeiro cabeçalho e depois no segundo para ligar os dois com uma linha.",
-    seta: "Toque no cabeçalho de origem e depois no de destino: a seta aponta para o segundo.",
-    dupla: "Toque nos dois cabeçalhos para ligá-los com uma seta de duas pontas.",
+    linha: "Arraste de um cabeçalho até outro (ou toque no primeiro e depois no segundo) para ligá-los com uma linha.",
+    seta: "Arraste do cabeçalho de origem até o de destino (ou toque num e depois no outro): a seta aponta para o segundo.",
+    dupla: "Arraste de um cabeçalho até outro (ou toque num e depois no outro) para ligá-los com uma seta de duas pontas.",
   };
 
   function escolherFerramenta(f) {
@@ -120,7 +120,32 @@ export function abrirEditor({ json, aoSalvar }) {
     svg.setAttribute("viewBox", `0 0 ${LARG} ${ALT}`);
     svg.setAttribute("width", LARG * zoom);
     svg.setAttribute("height", ALT * zoom);
-    svg.innerHTML = svgDesenho() + (est.nos.length ? "" : `<text x="${LARG / 2}" y="${ALT / 2}" text-anchor="middle" font-family="${FONTE}" font-size="22" fill="#b5b6c8">Quadro branco: use “Cabeçalho” para começar</text>`);
+    svg.innerHTML = svgDesenho() + (est.nos.length ? "" : `<text x="${LARG / 2}" y="${ALT / 2}" text-anchor="middle" font-family="${FONTE}" font-size="22" fill="#b5b6c8">Quadro branco: use “Cabeçalho” para começar</text>`)
+      + `<path id="org-previa" d="" stroke="#e53935" stroke-width="2.5" stroke-dasharray="7 5" fill="none" pointer-events="none"/>`;
+    desenharPrevia();
+  }
+
+  // Linha provisória que sai do cabeçalho de origem e segue o dedo/mouse
+  let mira = null;
+  function desenharPrevia() {
+    const pv = svg.querySelector("#org-previa");
+    if (!pv) return;
+    const n = origem && est.nos.find((k) => k.id === origem);
+    if (!n || !mira) { pv.setAttribute("d", ""); return; }
+    const [x1, y1] = pontoBorda(n, mira[0], mira[1]);
+    pv.setAttribute("d", `M${x1},${y1} L${mira[0]},${mira[1]}`);
+    pv.setAttribute("marker-end", ferramenta === "linha" ? "" : "url(#ponta)");
+    pv.setAttribute("marker-start", ferramenta === "dupla" ? "url(#ponta)" : "");
+  }
+  function ligar(para) {
+    if (!origem || !para || para === origem) return false;
+    if (est.lig.some((l) => (l.de === origem && l.para === para) || (l.de === para && l.para === origem))) {
+      aviso("Esses dois cabeçalhos já estão ligados.", "erro"); origem = null; mira = null; desenhar(); return true;
+    }
+    guardar();
+    est.lig.push({ id: "l" + Date.now().toString(36), de: origem, para, tipo: ferramenta });
+    origem = null; mira = null; ajuda.textContent = AJUDAS[ferramenta]; desenhar();
+    return true;
   }
 
   // ---------------------------------------------------------- interação
@@ -143,13 +168,15 @@ export function abrirEditor({ json, aoSalvar }) {
       return;
     }
     if (["linha", "seta", "dupla"].includes(ferramenta)) {
-      if (!gNo) return;
+      if (est.nos.length < 2) { aviso("Coloque pelo menos dois cabeçalhos antes de ligar.", "erro"); return; }
+      if (!gNo) { origem = null; mira = null; ajuda.textContent = AJUDAS[ferramenta]; desenhar(); return; }
       const id = gNo.dataset.no;
-      if (!origem) { origem = id; ajuda.textContent = "Agora toque no segundo cabeçalho."; desenhar(); return; }
-      if (origem === id) return;
-      guardar();
-      est.lig.push({ id: "l" + Date.now().toString(36), de: origem, para: id, tipo: ferramenta });
-      origem = null; ajuda.textContent = AJUDAS[ferramenta]; desenhar();
+      if (origem && origem !== id) { ligar(id); return; }
+      origem = id; mira = [x, y];
+      arrasto = { ligando: true, sx: ev.clientX, sy: ev.clientY };
+      svg.setPointerCapture(ev.pointerId);
+      ajuda.textContent = "Arraste até o outro cabeçalho e solte (ou toque nele).";
+      desenhar();
       return;
     }
     // selecionar / mover
@@ -171,7 +198,8 @@ export function abrirEditor({ json, aoSalvar }) {
     }
   });
   svg.addEventListener("pointermove", (ev) => {
-    if (!arrasto) return;
+    if (origem && ["linha", "seta", "dupla"].includes(ferramenta)) { mira = ponto(ev); desenharPrevia(); }
+    if (!arrasto || arrasto.ligando) return;
     if (arrasto.rolar) { area.scrollLeft = arrasto.sl - (ev.clientX - arrasto.sx); area.scrollTop = arrasto.st - (ev.clientY - arrasto.sy); return; }
     const [x, y] = ponto(ev), m = medir(arrasto.n);
     if (!arrasto.moveu) { guardar(); arrasto.moveu = true; }
@@ -179,9 +207,19 @@ export function abrirEditor({ json, aoSalvar }) {
     arrasto.n.y = Math.round(Math.min(ALT - m.h, Math.max(0, y - arrasto.dy)) / 5) * 5;
     desenhar();
   });
-  const soltar = () => { arrasto = null; };
+  const soltar = (ev) => {
+    if (arrasto?.ligando) {
+      const andou = Math.hypot(ev.clientX - arrasto.sx, ev.clientY - arrasto.sy) > 8;
+      const alvo = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.("[data-no]");
+      if (andou) {
+        if (!ligar(alvo?.dataset.no)) { origem = null; mira = null; ajuda.textContent = AJUDAS[ferramenta]; desenhar(); }
+      }
+      // sem arrastar: fica esperando o toque no segundo cabeçalho
+    }
+    arrasto = null;
+  };
   svg.addEventListener("pointerup", soltar);
-  svg.addEventListener("pointercancel", soltar);
+  svg.addEventListener("pointercancel", () => { arrasto = null; });
   svg.addEventListener("dblclick", (ev) => {
     const g = ev.target.closest("[data-no]");
     if (g && ferramenta === "sel") editarTexto(est.nos.find((k) => k.id === g.dataset.no));

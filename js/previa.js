@@ -271,7 +271,7 @@ export async function abrirPrevia(dados, { aoGerar }) {
   estilo();
   const tela = el(`<div class="previa-fundo"><div class="previa-barra"><h3>Visualizar portfólio</h3>
     <small id="pv-info">Montando as páginas…</small>
-    <button class="botao pequeno" data-a="fechar">Fechar</button><button class="botao pequeno primario" data-a="gerar">📄 Gerar portfólio</button></div>
+    <button class="botao pequeno primario" data-a="gerar">📄 Gerar portfólio</button><button class="fechar-x" data-a="fechar" title="Fechar" aria-label="Fechar">✕</button></div>
     <div class="previa-folhas"><p class="previa-aguarde">Montando as páginas…</p></div></div>`);
   document.body.append(tela);
   const fechar = () => { tela.remove(); document.removeEventListener("keydown", tecla); };

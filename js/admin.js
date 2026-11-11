@@ -1,6 +1,6 @@
 import { db, api, logado, usuarioId, subirArquivo } from "./supa.js";
 import {
-  $, $$, el, esc, aviso, erro, janela, confirmar, confirmarDigitando, montarTopo, ganchos,
+  $, $$, el, esc, aviso, erro, janela, confirmar, confirmarDigitando, montarTopo, ganchos, travarAteMudar,
   fmtData, comprimir, escolherArquivo, avatar,
 } from "./ui.js";
 
@@ -273,12 +273,14 @@ async function novaDisciplina() {
 
 async function desenharDisciplina(d) {
   const corpo = $("#disc-corpo");
-  const [reqs, ports, todos] = await Promise.all([
+  const [reqsTodos, ports, todos] = await Promise.all([
     db.sel("requisitos", { disciplina_id: `eq.${d.id}`, order: "ordem.asc,criado_em.asc" }),
     db.sel("portfolios", { disciplina_id: `eq.${d.id}`, removido: "eq.false", select: "id,aluno_id" }),
     db.sel("perfis", { papel: "eq.aluno", order: "nome.asc" }),
   ]);
   const alunos = ports.map((p) => todos.find((a) => a.id === p.aluno_id)).filter(Boolean);
+  // "Confecção do portfólio" é automático: fica fora da lista editável e sempre por último
+  const reqs = reqsTodos.filter((r) => !r.fixo), fixos = reqsTodos.filter((r) => r.fixo);
   corpo.innerHTML = "";
   const c = el(`<div class="cartao">
     <div class="item-cab"><h3 style="font-size:17px">${esc(d.nome)} ${d.arquivada ? '<span class="selo-p inativo">arquivada</span>' : ""}</h3>
@@ -286,10 +288,9 @@ async function desenharDisciplina(d) {
       <button data-a="arquivar" title="${d.arquivada ? "Reativar" : "Arquivar"}">${d.arquivada ? "▶" : "🗄"}</button>
       <button data-a="excluir" title="Excluir toda a disciplina">🗑</button></span></div>
     <form class="form-disc">
-      <div class="grade3">
+      <div class="grade2">
         <div><label class="rotulo">Carga horária requerida (h)</label><input name="carga_requerida" type="number" min="0" step="0.5" class="campo"></div>
         <div><label class="rotulo">Carga horária semanal (h)</label><input name="carga_semanal" type="number" min="0" step="0.5" class="campo"></div>
-        <div><label class="rotulo">Confecção do relatório (h)</label><input name="horas_relatorio" type="number" min="0" step="0.5" class="campo"><div class="dica-campo">Linha própria no quadro-resumo.</div></div>
       </div>
       <div class="grade2">
         <div><label class="rotulo">Início do período (primeiro dia de prática)</label><input name="inicio" type="date" class="campo"></div>
@@ -300,7 +301,7 @@ async function desenharDisciplina(d) {
       <div class="dica-campo">Entra no texto automático da carga horária: “… no horário de <i>[o que você escrever aqui]</i>.”</div>
       <div class="linha-botoes"><button type="button" class="botao primario salvar-disc">Salvar dados da disciplina</button></div>
     </form>
-    <div class="caixa-lista"><div class="caixa-lista-topo"><b>Requisitos da disciplina (${reqs.filter((r) => !r.arquivado).length})</b>
+    <div class="caixa-lista"><div class="caixa-lista-topo"><b>Requisitos da disciplina (${reqs.filter((r) => !r.arquivado).length + fixos.length})</b>
       <button class="botao pequeno primario" data-a="novo-req">＋ Ad. novo requisito</button></div>
       <div class="caixa-lista-corpo" id="lista-reqs"></div></div>
     <div class="caixa-lista"><div class="caixa-lista-topo"><b>Alunos desta disciplina (${alunos.length})</b>
@@ -309,14 +310,14 @@ async function desenharDisciplina(d) {
   </div>`);
   corpo.append(c);
   const f = $(".form-disc", c);
-  for (const k of ["carga_requerida", "carga_semanal", "horas_relatorio", "inicio", "fim", "horario"]) f[k].value = d[k] ?? "";
+  for (const k of ["carga_requerida", "carga_semanal", "inicio", "fim", "horario"]) f[k].value = d[k] ?? "";
+  const trava = travarAteMudar(f, $(".salvar-disc", c));
   $(".salvar-disc", c).onclick = async () => {
     const dados = {};
-    for (const k of ["carga_requerida", "carga_semanal", "horas_relatorio"]) dados[k] = f[k].value === "" ? null : Number(f[k].value);
-    if (dados.horas_relatorio === null) dados.horas_relatorio = 0;
+    for (const k of ["carga_requerida", "carga_semanal"]) dados[k] = f[k].value === "" ? null : Number(f[k].value);
     dados.inicio = f.inicio.value || null; dados.fim = f.fim.value || null; dados.horario = f.horario.value.trim() || null;
     if (dados.inicio && dados.fim && dados.fim < dados.inicio) return aviso("O último dia vem antes do primeiro.", "erro");
-    try { await db.upd("disciplinas", { id: `eq.${d.id}` }, dados); Object.assign(d, dados); aviso("Disciplina salva."); }
+    try { await db.upd("disciplinas", { id: `eq.${d.id}` }, dados); Object.assign(d, dados); trava.salvo(); aviso("Disciplina salva."); }
     catch (e) { erro(e); }
   };
 
@@ -329,7 +330,9 @@ async function desenharDisciplina(d) {
         <button data-a="subir" title="Subir" ${i === 0 ? "disabled" : ""}>↑</button>
         <button data-a="editar" title="Editar">✏️</button>
         <button data-a="arquivar" title="${r.arquivado ? "Reativar" : "Arquivar"}">${r.arquivado ? "▶" : "🗄"}</button>
-        <button data-a="excluir" title="Excluir">🗑</button></span></div>`).join("") || '<p class="vazio">Nenhum requisito ainda.</p>';
+        <button data-a="excluir" title="Excluir">🗑</button></span></div>`).join("")
+    + fixos.map((r) => `<div class="linha-item"><span class="texto"><b>${esc(r.enunciado)}</b></span>
+      <span class="meta">O aluno informa as horas · aparece só no quadro-resumo</span><span class="selo-fixo">automático · obrigatório</span></div>`).join("");
   $$("button[data-a]", lr).forEach((b) => (b.onclick = () => {
     const r = reqs.find((x) => x.id === b.closest(".linha-item").dataset.id);
     acaoRequisito(b.dataset.a, r, reqs, d);
