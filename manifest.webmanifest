@@ -1,0 +1,16 @@
+{
+  "name": "Portfólio SALT-FAAMA",
+  "short_name": "Portfólio",
+  "description": "Trabalho Final de Atividades de Extensão — SALT-FAAMA",
+  "lang": "pt-BR",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1800ac",
+  "theme_color": "#0f0a5c",
+  "icons": [
+    { "src": "icones/icone-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icones/icone-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icones/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
