@@ -45,9 +45,9 @@ const CSS = `
 .pv-sep { width: 5cm; border-top: 0.75pt solid #000; margin: 0 0 3pt; }
 .pv-titulo-lista { text-align: center; font-weight: bold; line-height: ${LINHA_15}; margin-bottom: 12pt !important; }
 .pv-ent { display: flex; align-items: flex-end; line-height: 1.15; margin-bottom: 4pt !important; }
-.pv-ent .t { flex: 1; overflow: hidden; }
-.pv-ent .t span { background: #fff; padding-right: 3pt; }
-.pv-ent .t { background-image: radial-gradient(circle, #000 0.6px, transparent 0.8px); background-size: 4px 3px; background-repeat: repeat-x; background-position: 0 calc(100% - 3px); }
+.pv-ent .t { flex: 1; overflow: hidden; position: relative; }
+.pv-ent .t::after { content: ""; position: absolute; left: 0; right: 0; bottom: 3px; border-bottom: 1.5px dotted #000; }
+.pv-ent .t span { position: relative; z-index: 1; background: #fff; padding-right: 3pt; }
 .pv-ent .pg { min-width: 1.2em; text-align: right; padding-left: 3pt; background: #fff; }
 .pv-ent .num { display: inline-block; }
 .pv-ent.n1 { font-weight: bold; }
@@ -267,24 +267,9 @@ export async function calcularPaginas(dados) {
 }
 
 // ------------------------------------------------------------------ janela da prévia
-export async function abrirPrevia(dados, { aoGerar }) {
-  estilo();
-  const tela = el(`<div class="previa-fundo"><div class="previa-barra"><h3>Visualizar portfólio</h3>
-    <small id="pv-info">Montando as páginas…</small>
-    <button class="botao pequeno primario" data-a="gerar">📄 Gerar portfólio</button><button class="fechar-x" data-a="fechar" title="Fechar" aria-label="Fechar">✕</button></div>
-    <div class="previa-folhas"><p class="previa-aguarde">Montando as páginas…</p></div></div>`);
-  document.body.append(tela);
-  const fechar = () => { tela.remove(); document.removeEventListener("keydown", tecla); };
-  const tecla = (e) => { if (e.key === "Escape") fechar(); };
-  document.addEventListener("keydown", tecla);
-  $('[data-a="fechar"]', tela).onclick = fechar;
-  $('[data-a="gerar"]', tela).onclick = () => aoGerar();
-  let r;
-  try { r = await paginar(dados); }
-  catch (e) { erro(e); fechar(); return; }
-  const area = $(".previa-folhas", tela);
-  area.innerHTML = "";
-  const escala = Math.min(1, (area.clientWidth - 20) / (PAG.w * CM));
+// Monta as folhas A4 (sem escala) a partir da paginação. Usado pela prévia e pelo PDF.
+export function montarFolhas(r) {
+  const folhas = [];
   let n = 0;
   for (const sg of r.segmentos) {
     for (const [s, c, notasPag] of sg.cortes) {
@@ -311,11 +296,35 @@ export async function abrirPrevia(dados, { aoGerar }) {
         }
       }
       if (n >= r.inicioCorpo) folha.append(el(`<div class="pv-num">${n}</div>`));
-      folha.style.transform = `scale(${escala})`;
-      const caixa = el(`<div class="pv-folha-caixa" style="width:${PAG.w * CM * escala}px;height:${PAG.h * CM * escala}px"></div>`);
-      caixa.append(folha);
-      area.append(caixa);
+      folhas.push(folha);
     }
+  }
+  return folhas;
+}
+
+export async function abrirPrevia(dados, { aoGerar }) {
+  estilo();
+  const tela = el(`<div class="previa-fundo"><div class="previa-barra"><h3>Visualizar portfólio</h3>
+    <small id="pv-info">Montando as páginas…</small>
+    <button class="botao pequeno primario" data-a="gerar">📄 Gerar portfólio</button><button class="fechar-x" data-a="fechar" title="Fechar" aria-label="Fechar">✕</button></div>
+    <div class="previa-folhas"><p class="previa-aguarde">Montando as páginas…</p></div></div>`);
+  document.body.append(tela);
+  const fechar = () => { tela.remove(); document.removeEventListener("keydown", tecla); };
+  const tecla = (e) => { if (e.key === "Escape") fechar(); };
+  document.addEventListener("keydown", tecla);
+  $('[data-a="fechar"]', tela).onclick = fechar;
+  $('[data-a="gerar"]', tela).onclick = () => aoGerar();
+  let r;
+  try { r = await paginar(dados); }
+  catch (e) { erro(e); fechar(); return; }
+  const area = $(".previa-folhas", tela);
+  area.innerHTML = "";
+  const escala = Math.min(1, (area.clientWidth - 20) / (PAG.w * CM));
+  for (const folha of montarFolhas(r)) {
+    folha.style.transform = `scale(${escala})`;
+    const caixa = el(`<div class="pv-folha-caixa" style="width:${PAG.w * CM * escala}px;height:${PAG.h * CM * escala}px"></div>`);
+    caixa.append(folha);
+    area.append(caixa);
   }
   r.regua.remove();
   $("#pv-info", tela).textContent = `${r.total} páginas · os números de página podem variar um pouco no Word`;

@@ -147,16 +147,27 @@ function bloco2() {
   $(".botao-dica", campo).onclick = () => janela({ titulo: "Dica — Caracterização do campo", corpo: `<p>${esc(DICAS.caract_campo)}</p>` });
   const inp = $("#campo-nome", campo);
   inp.value = D.portfolio.campo_nome;
-  let t = null;
+  // mesmo comportamento das caixas de texto: só salva no botão
+  const linhaNome = el(`<div class="campo-rodape"><span class="estado"></span><button type="button" class="botao primario pequeno salvar" disabled>Salvar</button></div>`);
+  inp.after(linhaNome);
+  const btNome = $(".salvar", linhaNome), estNome = $(".estado", linhaNome);
+  const nomeMudou = () => {
+    const sujo = inp.value.trim() !== D.portfolio.campo_nome;
+    btNome.disabled = !sujo;
+    estNome.textContent = sujo ? "Alterações não salvas" : (D.portfolio.campo_nome ? "Salvo ✓" : "");
+  };
   const salvarNome = async () => {
-    clearTimeout(t);
     const v = inp.value.trim();
-    if (v === D.portfolio.campo_nome) return;
+    if (v === D.portfolio.campo_nome) return nomeMudou();
+    btNome.disabled = true; estNome.textContent = "Salvando…";
     try { await db.upd("portfolios", { id: `eq.${D.portfolio.id}` }, { campo_nome: v }); D.portfolio.campo_nome = v; atualizarPercentuais(); }
     catch (e) { erro(e); }
+    nomeMudou();
   };
-  inp.oninput = () => { clearTimeout(t); t = setTimeout(salvarNome, 1200); };
-  inp.onblur = salvarNome;
+  inp.oninput = nomeMudou;
+  btNome.onclick = salvarNome;
+  nomeMudou();
+  campos.push({ pendente: () => inp.value.trim() !== D.portfolio.campo_nome, salvar: salvarNome });
   const cc = campoTexto({
     valor: D.portfolio.caract_campo, linhas: 9, nota: true,
     aoSalvar: async (v) => { await db.upd("portfolios", { id: `eq.${D.portfolio.id}` }, { caract_campo: v }); D.portfolio.caract_campo = v; atualizarPercentuais(); },
@@ -290,7 +301,7 @@ function desenharOrganograma() {
     ? `<img class="miniatura-org" src="${esc(D.portfolio.organograma_url)}" alt="Organograma"><button class="botao primario">✏️ Editar organograma</button>`
     : `<button class="botao primario">🧩 Abrir editor do organograma</button>`;
   $("button", a).onclick = async () => {
-    const { abrirEditor } = await import("./organograma.js?v=1");
+    const { abrirEditor } = await import("./organograma.js");
     abrirEditor({
       json: D.portfolio.organograma_json,
       aoSalvar: async (json, png) => {
@@ -561,19 +572,53 @@ async function abrirQuadro() {
   });
 }
 
-async function salvarPendentes() { for (const c of campos) if (c.pendente()) await c.salvar(); }
+// Sem salvamento automático: antes de visualizar ou gerar, pergunta o que fazer com o que não foi salvo
+async function conferirPendentes(acao) {
+  const pend = campos.filter((c) => c.pendente());
+  if (!pend.length) return true;
+  const r = await janela({
+    titulo: "Alterações não salvas",
+    corpo: `<p>Você tem ${pend.length === 1 ? "um texto alterado que ainda não foi salvo" : pend.length + " textos alterados que ainda não foram salvos"}.</p><p>O que ${acao} mostra é só o que já está salvo.</p>`,
+    botoes: [{ rotulo: "Cancelar", valor: null }, { rotulo: "Continuar sem salvar", valor: "seguir" }, { rotulo: "Salvar e continuar", classe: "primario", valor: "salvar" }],
+  });
+  if (!r) return false;
+  if (r === "salvar") for (const c of pend) await c.salvar();
+  return true;
+}
 
 async function visualizar() {
-  await salvarPendentes();
-  const { abrirPrevia } = await import("./previa.js?v=1");
+  if (!(await conferirPendentes("a prévia"))) return;
+  const { abrirPrevia } = await import("./previa.js");
   abrirPrevia(D, { aoGerar: gerar });
 }
 
 async function gerar() {
-  await salvarPendentes();
-  const { gerarWord } = await import("./word.js?v=1");
-  aviso("Gerando o arquivo Word…");
-  try { await gerarWord(D); } catch (e) { erro(e); }
+  if (!(await conferirPendentes("o arquivo"))) return;
+  const formato = await janela({
+    titulo: "Gerar portfólio",
+    corpo: `<p style="margin-top:0">Em qual formato você quer o trabalho?</p>
+      <div class="formatos">
+        <div class="formato"><b>📄 Word (.docx)</b><span>Dá para editar depois. Ao abrir, o Word pergunta se quer atualizar os campos: responda <b>Sim</b> para acertar o sumário.</span></div>
+        <div class="formato"><b>📕 PDF</b><span>Pronto para entregar, exatamente como aparece em “Visualizar portfólio”.</span></div>
+      </div>`,
+    botoes: [{ rotulo: "Cancelar", valor: null }, { rotulo: "📄 Word", classe: "primario", valor: "word" }, { rotulo: "📕 PDF", classe: "primario", valor: "pdf" }],
+  });
+  if (!formato) return;
+  const { montar } = await import("./documento.js");
+  const nome = montar(D).nomeArquivo;
+  const progresso = el(`<div class="progresso-arquivo"><div class="giro"></div><span>Preparando o ${formato === "pdf" ? "PDF" : "Word"}…</span></div>`);
+  document.body.append(progresso);
+  try {
+    if (formato === "word") {
+      const { gerarWord } = await import("./word.js");
+      await gerarWord(D);
+    } else {
+      const { gerarPdf } = await import("./pdf.js");
+      await gerarPdf(D, nome, (i, n) => { $("span", progresso).textContent = `Gerando o PDF… página ${i} de ${n}`; });
+    }
+    aviso(formato === "pdf" ? "PDF gerado." : "Word gerado.");
+  } catch (e) { erro(e); }
+  progresso.remove();
 }
 
 iniciar().catch(erro);

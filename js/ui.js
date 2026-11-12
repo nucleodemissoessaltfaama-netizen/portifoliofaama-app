@@ -285,52 +285,158 @@ async function abrirNotificacoes(bSino, perfil) {
   }));
 }
 
-// ---------------------------------------------------------------- campo de texto com contador e salvamento
-// Salva sozinho depois de uma pausa e também pelo botão "Salvar".
+// ---------------------------------------------------------------- campo de texto com contador e botão Salvar
+// Sem salvamento automático: o botão fica azul quando há alteração e cinza quando está tudo salvo.
+//
+// Notas de rodapé: no banco ficam como [[nota: texto]]; na caixa aparecem como um número
+// sobrescrito (¹ ² ³…) precedido de um caractere invisível (U+2063), para não confundir com
+// um "²" digitado de propósito (km²). A numeração segue a do trabalho: continua de uma caixa
+// para a outra, na ordem em que as caixas aparecem.
+const MARCA = "⁣";
+const SUP = "⁰¹²³⁴⁵⁶⁷⁸⁹";
+const sobrescrito = (n) => String(n).split("").map((d) => SUP[+d]).join("");
+const numeroDe = (t) => Number([...t].map((c) => SUP.indexOf(c)).join(""));
+const RE_NOTA = /\[\[nota:\s*([\s\S]*?)\]\]/g;
+const RE_MARCA = /⁣([⁰¹²³⁴⁵⁶⁷⁸⁹]+)|⁣|/g;
+const camposComNota = [];
+
+function deslocamento(caixa) {
+  let n = 0;
+  for (const c of camposComNota) { if (c === caixa) break; n += c.totalNotas(); }
+  return n;
+}
+function renumerarDepois(caixa) {
+  let depois = false;
+  for (const c of camposComNota) { if (depois) c.renumerar(); if (c === caixa) depois = true; }
+}
+
 export function campoTexto({ valor, aoSalvar, linhas = 8, placeholder = "", nota = false, formatacao = false }) {
   const caixa = el(`<div class="campo-texto">
     ${nota || formatacao ? `<div class="ferramentas">
       ${formatacao ? '<button type="button" class="botao pequeno" data-f="neg" title="Negrito"><b>N</b></button><button type="button" class="botao pequeno" data-f="ita" title="Itálico"><i>I</i></button>' : ""}
-      ${nota ? '<button type="button" class="botao pequeno" data-f="nota" title="Inserir nota de rodapé">¹ Nota de rodapé</button>' : ""}
+      ${nota ? '<button type="button" class="botao pequeno" data-f="nota" title="Inserir nota de rodapé onde está o cursor">¹ Nota de rodapé</button>' : ""}
     </div>` : ""}
     <textarea class="campo" rows="${linhas}" placeholder="${esc(placeholder)}"></textarea>
+    ${nota ? `<div class="bloco-notas"><div class="bloco-notas-cab">Notas de rodapé deste texto</div><ol class="lista-notas"></ol></div>` : ""}
     <div class="campo-rodape"><span class="estado"></span><span class="contador">0 palavras</span>
       <button type="button" class="botao primario pequeno salvar" disabled>Salvar</button></div></div>`);
   const ta = $("textarea", caixa), est = $(".estado", caixa), cont = $(".contador", caixa), bt = $(".salvar", caixa);
-  ta.value = valor || "";
-  let salvo = ta.value, tempo = null, salvando = false;
-  // Botão cinza e travado enquanto não houver nada novo para salvar
-  const marcarBotao = () => { bt.disabled = salvando || ta.value === salvo; };
-  const contar = () => { const n = palavras(ta.value); cont.textContent = `${n} ${n === 1 ? "palavra" : "palavras"}`; };
-  const salvar = async () => {
-    clearTimeout(tempo);
-    if (ta.value === salvo || salvando) { marcarBotao(); return; }
-    const v = ta.value;
-    salvando = true; marcarBotao();
-    est.textContent = "Salvando…";
-    try { await aoSalvar(v); salvo = v; est.textContent = "Salvo ✓"; }
-    catch (e) { est.textContent = "Não salvou"; erro(e); }
-    salvando = false; marcarBotao();
-    if (ta.value !== salvo) { est.textContent = "Alterações não salvas"; tempo = setTimeout(salvar, 1500); }
+  let notas = [];          // [{ texto }] na ordem em que aparecem
+  let base = 0;            // quantas notas vêm antes desta caixa no trabalho
+  let pendente = null;     // texto da nota que está sendo inserida
+  let salvando = false;
+
+  // ---- conversões
+  const paraTela = (t) => {
+    notas = [];
+    return String(t || "").replace(RE_NOTA, (_, tx) => { notas.push({ texto: tx.trim() }); return MARCA + sobrescrito(base + notas.length); });
   };
-  ta.addEventListener("input", () => { contar(); marcarBotao(); est.textContent = ta.value === salvo ? "Salvo ✓" : "Alterações não salvas"; clearTimeout(tempo); tempo = setTimeout(salvar, 1500); });
-  ta.addEventListener("blur", () => { if (ta.value !== salvo) salvar(); });
+  const paraBanco = () => {
+    let k = 0;
+    return ta.value.replace(RE_MARCA, (m, dig) => (dig ? `[[nota: ${(notas[k++]?.texto || "").replace(/\]\]/g, "]")}]]` : ""));
+  };
+
+  // Relê a caixa: tira marcas soltas ou repetidas, encaixa a nota nova e renumera
+  function reorganizar() {
+    const v = ta.value, pos = ta.selectionStart;
+    const novas = [], vistas = new Set();
+    let ajuste = 0;
+    const saida = v.replace(RE_MARCA, (m, dig, off) => {
+      let troca = "";
+      if (m === "") { if (pendente !== null) { novas.push({ texto: pendente }); troca = MARCA + sobrescrito(base + novas.length); } }
+      else if (dig) {
+        const i = numeroDe(dig) - base - 1;
+        if (notas[i] && !vistas.has(i)) { vistas.add(i); novas.push(notas[i]); troca = MARCA + sobrescrito(base + novas.length); }
+      }
+      if (off < pos) ajuste += troca.length - m.length;
+      return troca;
+    });
+    pendente = null;
+    const mudouQtd = novas.length !== notas.length;
+    notas = novas;
+    if (saida !== v) { ta.value = saida; ta.setSelectionRange(pos + ajuste, pos + ajuste); }
+    desenharNotas();
+    if (mudouQtd) renumerarDepois(caixa);
+  }
+
+  function desenharNotas() {
+    const ol = $(".lista-notas", caixa);
+    if (!ol) return;
+    ol.innerHTML = notas.length ? notas.map((n, i) => `<li data-i="${i}"><span class="num-nota">${sobrescrito(base + i + 1)}</span>
+      <span class="texto">${esc(n.texto)}</span><span class="acoes-mini"><button type="button" data-n="editar" title="Editar nota">✏️</button><button type="button" data-n="apagar" title="Apagar nota">🗑</button></span></li>`).join("")
+      : '<li class="vazio-notas">Nenhuma nota neste texto. Ponha o cursor onde a nota deve ficar e toque em “¹ Nota de rodapé”.</li>';
+    $$("[data-n]", ol).forEach((b) => (b.onclick = async () => {
+      const i = +b.closest("li").dataset.i;
+      if (b.dataset.n === "editar") {
+        const t = await pedirTexto("Editar nota de rodapé", `Nota ${base + i + 1}:`, notas[i].texto, true);
+        if (!t) return;
+        notas[i].texto = t; desenharNotas(); mudou();
+      } else {
+        if (!(await confirmar(`Apagar a nota ${base + i + 1}? O número sai do texto também.`, "Apagar", true))) return;
+        let k = 0;
+        ta.value = ta.value.replace(RE_MARCA, (m, dig) => (dig && k++ === i ? "" : m));
+        reorganizar(); mudou();
+      }
+    }));
+  }
+
+  // ---- estado do botão
+  base = nota ? deslocamento(caixa) : 0;
+  ta.value = nota ? paraTela(valor) : (valor || "");
+  let salvo = nota ? paraBanco() : ta.value;
+  const atual = () => (nota ? paraBanco() : ta.value);
+  const contar = () => { const n = palavras(ta.value.replace(RE_MARCA, "")); cont.textContent = `${n} ${n === 1 ? "palavra" : "palavras"}`; };
+  function mudou() {
+    contar();
+    const sujo = atual() !== salvo;
+    bt.disabled = salvando || !sujo;
+    est.textContent = sujo ? "Alterações não salvas" : (salvo ? "Salvo ✓" : "");
+  }
+  const salvar = async () => {
+    const v = atual();
+    if (v === salvo || salvando) return mudou();
+    salvando = true; bt.disabled = true; est.textContent = "Salvando…";
+    try { await aoSalvar(v); salvo = v; }
+    catch (e) { erro(e); }
+    salvando = false; mudou();
+  };
+  ta.addEventListener("input", () => { if (nota) reorganizar(); mudou(); });
   bt.onclick = salvar;
   $$("[data-f]", caixa).forEach((b) => (b.onclick = async () => {
     const f = b.dataset.f, s = ta.selectionStart, e = ta.selectionEnd, sel = ta.value.slice(s, e);
     if (f === "nota") {
       const t = await pedirTexto("Nota de rodapé", "Texto da nota (ex.: a fonte do dado, com endereço e data de acesso):", "", true);
       if (!t) return;
-      ta.setRangeText(`[[nota: ${t.replace(/\]\]/g, "]")}]]`, e, e, "end");
+      pendente = t;
+      ta.setRangeText("", e, e, "end");
+      reorganizar();
     } else {
       const m = f === "neg" ? "**" : "*";
       ta.setRangeText(m + (sel || "texto") + m, s, e, "end");
     }
-    ta.focus(); ta.dispatchEvent(new Event("input"));
+    ta.focus(); mudou();
   }));
-  contar();
+
   caixa.salvar = salvar;
-  caixa.pendente = () => ta.value !== salvo;
+  caixa.pendente = () => atual() !== salvo;
+  if (nota) {
+    caixa.totalNotas = () => notas.length;
+    caixa.renumerar = () => {
+      const novo = deslocamento(caixa);
+      if (novo === base) return;
+      const antes = paraBanco();      // pelo texto do banco, que não depende do número
+      const pos = ta.selectionStart, foco = document.activeElement === ta;
+      base = novo;
+      const k = notas.map((n) => ({ ...n }));
+      ta.value = paraTela(antes);
+      notas = k;
+      if (foco) ta.setSelectionRange(pos, pos);
+      desenharNotas();
+    };
+    camposComNota.push(caixa);
+    desenharNotas();
+  }
+  mudou();
   return caixa;
 }
 

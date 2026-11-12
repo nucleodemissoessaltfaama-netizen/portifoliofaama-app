@@ -1,4 +1,4 @@
-// Editor de organograma: cabeçalhos (bloco de título + bloco de baixo), linha, seta e seta dupla.
+// Editor de organograma: caixas de título (bloco de cima + bloco de baixo), texto livre, linha, seta e seta dupla.
 // Salva o desenho (JSON, para editar de novo) e um PNG recortado só da parte usada.
 import { $, $$, el, esc, aviso, erro, janela, confirmar } from "./ui.js";
 
@@ -10,6 +10,15 @@ const NS = "http://www.w3.org/2000/svg";
 const regua = document.createElement("canvas").getContext("2d");
 function largura(txt, tam, negrito) { regua.font = `${negrito ? "bold " : ""}${tam}px ${FONTE}`; return regua.measureText(txt).width; }
 
+// Texto livre escrito no quadro branco (título ou texto normal)
+const TAM_TXT = { titulo: 22, normal: 16 };
+function medirTexto(t) {
+  const tam = TAM_TXT[t.tam] || 22, linhas = String(t.texto || " ").split("\n");
+  const w = Math.max(20, ...linhas.map((l) => largura(l, tam, t.tam !== "normal")));
+  return { w, h: linhas.length * tam * 1.3, linhas, tam };
+}
+const medida = (item) => (item.texto !== undefined ? medirTexto(item) : medir(item));
+
 function medir(n) {
   const l1 = String(n.titulo || "").split("\n"), l2 = String(n.sub || "").split("\n").filter((x) => x.trim());
   const w = Math.max(130, ...l1.map((t) => largura(t, 15, true) + 28), ...l2.map((t) => largura(t, 13, false) + 24));
@@ -19,6 +28,7 @@ function medir(n) {
 
 export function abrirEditor({ json, aoSalvar }) {
   const est = json && Array.isArray(json.nos) ? structuredClone(json) : { nos: [], lig: [] };
+  if (!Array.isArray(est.textos)) est.textos = [];
   let ferramenta = "sel", sel = null, origem = null, zoom = window.innerWidth < 700 ? 0.6 : 0.85, alterado = false;
   const historico = [];
   const guardar = () => { historico.push(JSON.stringify(est)); if (historico.length > 40) historico.shift(); alterado = true; };
@@ -32,7 +42,8 @@ export function abrirEditor({ json, aoSalvar }) {
         <button class="botao primario" data-a="salvar">💾 Salvar</button>
         <div class="sep"></div>
         <button class="botao" data-f="sel">🖱 Selecionar / mover</button>
-        <button class="botao" data-f="no">▭ Cabeçalho</button>
+        <button class="botao" data-f="no">▭ Caixa de título</button>
+        <button class="botao" data-f="txt">𝐓 Texto</button>
         <button class="botao" data-f="linha">— Linha</button>
         <button class="botao" data-f="seta">→ Seta</button>
         <button class="botao" data-f="dupla">↔ Seta dupla</button>
@@ -49,11 +60,12 @@ export function abrirEditor({ json, aoSalvar }) {
   const svg = $("svg", tela), area = $(".org-tela", tela), ajuda = $("#org-ajuda", tela);
 
   const AJUDAS = {
-    sel: "Toque num cabeçalho ou numa linha para selecionar. Arraste para mover. Toque duas vezes num cabeçalho para editar o texto. Arraste o fundo para rolar.",
-    no: "Toque no quadro branco onde o cabeçalho deve ficar.",
-    linha: "Arraste de um cabeçalho até outro (ou toque no primeiro e depois no segundo) para ligá-los com uma linha.",
-    seta: "Arraste do cabeçalho de origem até o de destino (ou toque num e depois no outro): a seta aponta para o segundo.",
-    dupla: "Arraste de um cabeçalho até outro (ou toque num e depois no outro) para ligá-los com uma seta de duas pontas.",
+    sel: "Toque numa caixa de título, num texto ou numa linha para selecionar. Arraste para mover. Toque duas vezes para editar o texto. Arraste o fundo para rolar.",
+    no: "Toque no quadro branco onde a caixa de título deve ficar.",
+    txt: "Toque no quadro branco onde o texto deve ficar (por exemplo, o título do organograma).",
+    linha: "Arraste de uma caixa de título até outra (ou toque na primeira e depois na segunda) para ligá-las com uma linha.",
+    seta: "Arraste da caixa de título de origem até a de destino (ou toque numa e depois na outra): a seta aponta para a segunda.",
+    dupla: "Arraste de uma caixa de título até outra (ou toque numa e depois na outra) para ligá-las com uma seta de duas pontas.",
   };
 
   function escolherFerramenta(f) {
@@ -113,19 +125,27 @@ export function abrirEditor({ json, aoSalvar }) {
         ${t1}${t2}
         ${marcado ? `<rect x="${n.x - 5}" y="${n.y - 5}" width="${m.w + 10}" height="${m.h + 10}" fill="none" stroke="#e53935" stroke-width="2" stroke-dasharray="6 4" rx="6"/>` : ""}</g>`;
     }).join("");
-    return defs + ligs + nos;
+    const textos = est.textos.map((t) => {
+      const m = medirTexto(t);
+      const marcado = !paraExportar && sel?.tipo === "txt" && sel.id === t.id;
+      return `<g data-txt="${t.id}" style="cursor:${paraExportar ? "default" : "move"}">
+        ${paraExportar ? "" : `<rect x="${t.x - 4}" y="${t.y - 4}" width="${m.w + 8}" height="${m.h + 8}" fill="transparent"/>`}
+        ${m.linhas.map((l, i) => `<text x="${t.x}" y="${t.y + m.tam * (1.05 + i * 1.3)}" font-family="${FONTE}" font-size="${m.tam}" ${t.tam !== "normal" ? 'font-weight="bold"' : ""} fill="#1d2440">${esc(l)}</text>`).join("")}
+        ${marcado ? `<rect x="${t.x - 6}" y="${t.y - 6}" width="${m.w + 12}" height="${m.h + 12}" fill="none" stroke="#e53935" stroke-width="2" stroke-dasharray="6 4" rx="6"/>` : ""}</g>`;
+    }).join("");
+    return defs + ligs + nos + textos;
   }
 
   function desenhar() {
     svg.setAttribute("viewBox", `0 0 ${LARG} ${ALT}`);
     svg.setAttribute("width", LARG * zoom);
     svg.setAttribute("height", ALT * zoom);
-    svg.innerHTML = svgDesenho() + (est.nos.length ? "" : `<text x="${LARG / 2}" y="${ALT / 2}" text-anchor="middle" font-family="${FONTE}" font-size="22" fill="#b5b6c8">Quadro branco: use “Cabeçalho” para começar</text>`)
+    svg.innerHTML = svgDesenho() + (est.nos.length || est.textos.length ? "" : `<text x="${LARG / 2}" y="${ALT / 2}" text-anchor="middle" font-family="${FONTE}" font-size="22" fill="#b5b6c8">Quadro branco: use “Cabeçalho” para começar</text>`)
       + `<path id="org-previa" d="" stroke="#e53935" stroke-width="2.5" stroke-dasharray="7 5" fill="none" pointer-events="none"/>`;
     desenharPrevia();
   }
 
-  // Linha provisória que sai do cabeçalho de origem e segue o dedo/mouse
+  // Linha provisória que sai da caixa de título de origem e segue o dedo/mouse
   let mira = null;
   function desenharPrevia() {
     const pv = svg.querySelector("#org-previa");
@@ -140,7 +160,7 @@ export function abrirEditor({ json, aoSalvar }) {
   function ligar(para) {
     if (!origem || !para || para === origem) return false;
     if (est.lig.some((l) => (l.de === origem && l.para === para) || (l.de === para && l.para === origem))) {
-      aviso("Esses dois cabeçalhos já estão ligados.", "erro"); origem = null; mira = null; desenhar(); return true;
+      aviso("Essas duas caixas de título já estão ligadas.", "erro"); origem = null; mira = null; desenhar(); return true;
     }
     guardar();
     est.lig.push({ id: "l" + Date.now().toString(36), de: origem, para, tipo: ferramenta });
@@ -156,8 +176,16 @@ export function abrirEditor({ json, aoSalvar }) {
   let arrasto = null, ultimoToque = { id: null, t: 0 };
 
   svg.addEventListener("pointerdown", (ev) => {
-    const gNo = ev.target.closest("[data-no]"), gLig = ev.target.closest("[data-lig]");
+    const gNo = ev.target.closest("[data-no]"), gLig = ev.target.closest("[data-lig]"), gTxt = ev.target.closest("[data-txt]");
     const [x, y] = ponto(ev);
+    if (ferramenta === "txt") {
+      if (gTxt || gNo) return;
+      const t = { id: "t" + Date.now().toString(36), x: Math.max(0, x), y: Math.max(0, y - 14), texto: "", tam: "titulo" };
+      sel = { tipo: "txt", id: t.id };
+      escolherFerramenta("sel");
+      editarTextoLivre(t, true);
+      return;
+    }
     if (ferramenta === "no") {
       if (gNo) return;
       guardar();
@@ -168,14 +196,14 @@ export function abrirEditor({ json, aoSalvar }) {
       return;
     }
     if (["linha", "seta", "dupla"].includes(ferramenta)) {
-      if (est.nos.length < 2) { aviso("Coloque pelo menos dois cabeçalhos antes de ligar.", "erro"); return; }
+      if (est.nos.length < 2) { aviso("Coloque pelo menos duas caixas de título antes de ligar.", "erro"); return; }
       if (!gNo) { origem = null; mira = null; ajuda.textContent = AJUDAS[ferramenta]; desenhar(); return; }
       const id = gNo.dataset.no;
       if (origem && origem !== id) { ligar(id); return; }
       origem = id; mira = [x, y];
       arrasto = { ligando: true, sx: ev.clientX, sy: ev.clientY };
       svg.setPointerCapture(ev.pointerId);
-      ajuda.textContent = "Arraste até o outro cabeçalho e solte (ou toque nele).";
+      ajuda.textContent = "Arraste até a outra caixa de título e solte (ou toque nela).";
       desenhar();
       return;
     }
@@ -187,6 +215,15 @@ export function abrirEditor({ json, aoSalvar }) {
       ultimoToque = { id: n.id, t: agora };
       sel = { tipo: "no", id: n.id };
       arrasto = { n, dx: x - n.x, dy: y - n.y, moveu: false };
+      svg.setPointerCapture(ev.pointerId);
+      desenhar();
+    } else if (gTxt) {
+      const t = est.textos.find((k) => k.id === gTxt.dataset.txt);
+      const agora = Date.now();
+      if (ultimoToque.id === t.id && agora - ultimoToque.t < 400) { editarTextoLivre(t); ultimoToque = { id: null, t: 0 }; return; }
+      ultimoToque = { id: t.id, t: agora };
+      sel = { tipo: "txt", id: t.id };
+      arrasto = { n: t, dx: x - t.x, dy: y - t.y, moveu: false };
       svg.setPointerCapture(ev.pointerId);
       desenhar();
     } else if (gLig) {
@@ -201,7 +238,7 @@ export function abrirEditor({ json, aoSalvar }) {
     if (origem && ["linha", "seta", "dupla"].includes(ferramenta)) { mira = ponto(ev); desenharPrevia(); }
     if (!arrasto || arrasto.ligando) return;
     if (arrasto.rolar) { area.scrollLeft = arrasto.sl - (ev.clientX - arrasto.sx); area.scrollTop = arrasto.st - (ev.clientY - arrasto.sy); return; }
-    const [x, y] = ponto(ev), m = medir(arrasto.n);
+    const [x, y] = ponto(ev), m = medida(arrasto.n);
     if (!arrasto.moveu) { guardar(); arrasto.moveu = true; }
     arrasto.n.x = Math.round(Math.min(LARG - m.w, Math.max(0, x - arrasto.dx)) / 5) * 5;
     arrasto.n.y = Math.round(Math.min(ALT - m.h, Math.max(0, y - arrasto.dy)) / 5) * 5;
@@ -214,25 +251,42 @@ export function abrirEditor({ json, aoSalvar }) {
       if (andou) {
         if (!ligar(alvo?.dataset.no)) { origem = null; mira = null; ajuda.textContent = AJUDAS[ferramenta]; desenhar(); }
       }
-      // sem arrastar: fica esperando o toque no segundo cabeçalho
+      // sem arrastar: fica esperando o toque na segunda caixa de título
     }
     arrasto = null;
   };
   svg.addEventListener("pointerup", soltar);
   svg.addEventListener("pointercancel", () => { arrasto = null; });
   svg.addEventListener("dblclick", (ev) => {
-    const g = ev.target.closest("[data-no]");
+    const g = ev.target.closest("[data-no]"), gt = ev.target.closest("[data-txt]");
     if (g && ferramenta === "sel") editarTexto(est.nos.find((k) => k.id === g.dataset.no));
+    if (gt && ferramenta === "sel") editarTextoLivre(est.textos.find((k) => k.id === gt.dataset.txt));
   });
 
+  async function editarTextoLivre(t, novo = false) {
+    const corpo = el(`<div><label class="rotulo">Texto</label><textarea class="campo tx" rows="2" placeholder="Ex.: Organograma da Igreja Central de Cordeiro"></textarea>
+      <label class="rotulo">Tamanho</label><select class="campo tm"><option value="titulo">Título (grande, em negrito)</option><option value="normal">Texto normal</option></select>
+      <p class="dica-campo">Enter faz uma nova linha.</p></div>`);
+    $(".tx", corpo).value = t.texto; $(".tm", corpo).value = t.tam || "titulo";
+    const r = await janela({
+      titulo: novo ? "Novo texto" : "Editar texto", corpo,
+      botoes: [{ rotulo: "Cancelar", valor: null }, { rotulo: "OK", classe: "primario", acao: () => ({ tx: $(".tx", corpo).value.trim(), tm: $(".tm", corpo).value }) }],
+    });
+    if (!r || !r.tx) { if (novo) sel = null; desenhar(); return; }
+    guardar();
+    t.texto = r.tx; t.tam = r.tm;
+    if (novo) est.textos.push(t);
+    desenhar();
+  }
+
   async function editarTexto(n) {
-    if (!n) return aviso("Selecione um cabeçalho.", "erro");
+    if (!n) return aviso("Selecione uma caixa de título.", "erro");
     const corpo = el(`<div><label class="rotulo">Texto do bloco de cima (cargo, departamento)</label><textarea class="campo t1" rows="2"></textarea>
       <label class="rotulo">Texto do bloco de baixo (nome) — opcional</label><textarea class="campo t2" rows="2"></textarea>
       <p class="dica-campo">Enter faz uma nova linha dentro do bloco.</p></div>`);
     $(".t1", corpo).value = n.titulo; $(".t2", corpo).value = n.sub;
     const r = await janela({
-      titulo: "Texto do cabeçalho", corpo,
+      titulo: "Texto da caixa de título", corpo,
       botoes: [{ rotulo: "Cancelar", valor: null }, { rotulo: "OK", classe: "primario", acao: () => ({ t1: $(".t1", corpo).value.trim(), t2: $(".t2", corpo).value.trim() }) }],
     });
     if (!r) { desenhar(); return; }
@@ -242,9 +296,10 @@ export function abrirEditor({ json, aoSalvar }) {
   }
 
   function excluirSel() {
-    if (!sel) return aviso("Selecione um cabeçalho ou uma linha.", "erro");
+    if (!sel) return aviso("Selecione uma caixa de título ou uma linha.", "erro");
     guardar();
-    if (sel.tipo === "no") {
+    if (sel.tipo === "txt") est.textos = est.textos.filter((t) => t.id !== sel.id);
+    else if (sel.tipo === "no") {
       est.nos = est.nos.filter((n) => n.id !== sel.id);
       est.lig = est.lig.filter((l) => l.de !== sel.id && l.para !== sel.id);
     } else est.lig = est.lig.filter((l) => l.id !== sel.id);
@@ -271,7 +326,7 @@ export function abrirEditor({ json, aoSalvar }) {
   }
 
   async function salvar() {
-    if (!est.nos.length) return aviso("O organograma está vazio.", "erro");
+    if (!est.nos.length && !est.textos.length) return aviso("O organograma está vazio.", "erro");
     const bt = $('[data-a="salvar"]', tela);
     bt.disabled = true; bt.textContent = "Salvando…";
     try {
@@ -289,7 +344,9 @@ export function abrirEditor({ json, aoSalvar }) {
   $('[data-a="fechar"]', tela).onclick = fechar;
   $('[data-a="excluir"]', tela).onclick = excluirSel;
   $('[data-a="desfazer"]', tela).onclick = desfazer;
-  $('[data-a="editar"]', tela).onclick = () => editarTexto(sel?.tipo === "no" ? est.nos.find((n) => n.id === sel.id) : null);
+  $('[data-a="editar"]', tela).onclick = () => (sel?.tipo === "txt"
+    ? editarTextoLivre(est.textos.find((t) => t.id === sel.id))
+    : editarTexto(sel?.tipo === "no" ? est.nos.find((n) => n.id === sel.id) : null));
   $$("[data-z]", tela).forEach((b) => (b.onclick = () => { zoom = Math.min(2, Math.max(0.3, zoom + (b.dataset.z === "+" ? 0.15 : -0.15))); desenhar(); }));
   escolherFerramenta("sel");
 }
@@ -297,8 +354,8 @@ export function abrirEditor({ json, aoSalvar }) {
 // Recorte só da parte desenhada, em PNG com o dobro da resolução
 async function exportarPng(est, svgDesenho) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const n of est.nos) {
-    const m = medir(n);
+  for (const n of [...est.nos, ...(est.textos || [])]) {
+    const m = medida(n);
     x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x + m.w); y1 = Math.max(y1, n.y + m.h);
   }
   const pad = 16;
