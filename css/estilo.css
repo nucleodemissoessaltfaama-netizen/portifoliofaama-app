@@ -321,3 +321,20 @@ table.quadro { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .progresso-arquivo { position: fixed; inset: 0; z-index: 95; background: rgba(12,10,40,.55); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: #fff; font-weight: 600; text-align: center; padding: 20px; }
 .giro { width: 44px; height: 44px; border-radius: 50%; border: 4px solid rgba(255,255,255,.3); border-top-color: #fff; animation: girar 0.9s linear infinite; }
 @keyframes girar { to { transform: rotate(360deg); } }
+
+/* página de downloads */
+.apresentacao h1 { font-size: 20px; margin-bottom: 6px; }
+.apresentacao p { margin: 0 0 10px; }
+.passos { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.explica { margin: -6px 0 12px; font-size: 14px; }
+.item-download { display: flex; align-items: center; gap: 16px; }
+.item-download-info { flex: 1; min-width: 0; }
+.item-download h2 { font-size: 16px; margin-bottom: 4px; }
+.item-download p { margin: 0 0 6px; font-size: 14px; }
+a.botao, a.icone-topo { text-decoration: none; }
+@media (max-width: 560px) { .item-download { flex-direction: column; align-items: stretch; } }
+.resumo-dados { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 6px 0 14px; }
+.resumo-dados div { background: var(--azul-claro); border-radius: 10px; padding: 10px 12px; }
+.resumo-dados b { display: block; font-size: 22px; color: var(--azul-escuro); }
+.resumo-dados span { font-size: 12.5px; color: var(--leve); }
+.origem { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; }

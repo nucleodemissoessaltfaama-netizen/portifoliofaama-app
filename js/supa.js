@@ -141,27 +141,27 @@ export async function api(acao, dados = {}) {
 }
 
 // Fotos: depósito público "fotos", na pasta do usuário
-export function urlPublica(caminho) {
-  return `${BASE}/storage/v1/object/public/fotos/${caminho}`;
+// Arquivos da área de downloads: depósito público "downloads"
+const BUCKET = "downloads";
+const caminhoUrl = (c) => c.split("/").map(encodeURIComponent).join("/");
+export function urlPublica(caminho, nomeParaBaixar) {
+  return `${BASE}/storage/v1/object/public/${BUCKET}/${caminhoUrl(caminho)}${nomeParaBaixar ? "?download=" + encodeURIComponent(nomeParaBaixar) : ""}`;
 }
 
-export async function subirArquivo(blob, pasta, extensao = "jpg") {
-  const id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
-  const caminho = `${pasta}/${id}.${extensao}`;
+export async function subirArquivo(blob, caminho, tipo) {
   const t = await token();
-  const r = await fetch(`${BASE}/storage/v1/object/fotos/${caminho}`, {
+  const r = await fetch(`${BASE}/storage/v1/object/${BUCKET}/${caminhoUrl(caminho)}`, {
     method: "POST",
-    headers: { apikey: SUPABASE_ANON, Authorization: "Bearer " + t, "Content-Type": blob.type || "image/jpeg", "x-upsert": "true" },
+    headers: { apikey: SUPABASE_ANON, Authorization: "Bearer " + t, "Content-Type": tipo || blob.type || "application/octet-stream", "x-upsert": "true" },
     body: blob,
   });
   await lerResposta(r);
-  return urlPublica(caminho);
+  return caminho;
 }
 
-export async function apagarArquivo(url) {
-  if (!url || !url.includes("/object/public/fotos/")) return;
-  const caminho = url.split("/object/public/fotos/")[1];
+export async function apagarArquivo(caminho) {
+  if (!caminho) return;
   try {
-    await fetch(`${BASE}/storage/v1/object/fotos/${caminho}`, { method: "DELETE", headers: await cabecalhos() });
-  } catch { /* foto órfã não atrapalha */ }
+    await fetch(`${BASE}/storage/v1/object/${BUCKET}/${caminhoUrl(caminho)}`, { method: "DELETE", headers: await cabecalhos() });
+  } catch { /* arquivo órfão não atrapalha */ }
 }

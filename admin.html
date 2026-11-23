@@ -5,10 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Painel · Portfólio SALT-FAAMA</title>
 <meta name="theme-color" content="#0f0a5c">
-<link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icones/icone-32.png">
-<link rel="apple-touch-icon" href="icones/icone-180.png">
-<link rel="stylesheet" href="css/estilo.css?v=1">
+<link rel="stylesheet" href="css/estilo.css?v=4">
 </head>
 <body>
 <header class="topo">
@@ -16,18 +14,20 @@
   <div id="topo-direita"></div>
 </header>
 <main>
-  <div class="cartao armaz" id="armaz"><b>Armazenamento de fotos</b><div class="barra"><span style="width:0"></span></div><span class="leve">…</span></div>
+  <div class="cartao armaz" id="armaz"><b>Área de downloads</b><div class="barra"><span style="width:0"></span></div><span class="leve">…</span></div>
   <nav class="abas" id="abas">
-    <button data-aba="cadastros" class="ativa">Gerenciador de cadastros</button>
-    <button data-aba="disciplinas">Cadastro de disciplinas</button>
-    <button data-aba="turmas">Cadastro de turmas</button>
+    <button data-aba="disciplinas" class="ativa">Disciplinas e requisitos</button>
+    <button data-aba="turmas">Turmas</button>
     <button data-aba="orientador">Professor orientador</button>
+    <button data-aba="gerar">Gerar atualização</button>
+    <button data-aba="downloads">Downloads</button>
   </nav>
-  <section id="aba-cadastros"></section>
-  <section id="aba-disciplinas" hidden></section>
+  <section id="aba-disciplinas"></section>
   <section id="aba-turmas" hidden></section>
   <section id="aba-orientador" hidden></section>
+  <section id="aba-gerar" hidden></section>
+  <section id="aba-downloads" hidden></section>
 </main>
-<script type="module" src="js/admin.js?v=1"></script>
+<script type="module" src="js/admin.js?v=4"></script>
 </body>
 </html>

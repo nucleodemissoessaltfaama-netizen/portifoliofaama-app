@@ -131,6 +131,8 @@ export function horasQuadro(min) {
   return String(h).replace(".", ",");
 }
 
+export const tamanho = (b) => (!b ? "" : b < 1048576 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1048576).toFixed(1).replace(".", ",")} MB`);
+
 export const palavras = (t) => (String(t || "").replace(/\[\[nota:[^\]]*\]\]/g, " ").match(/\S+/g) || []).length;
 
 // ---------------------------------------------------------------- imagens
@@ -199,7 +201,7 @@ if ("serviceWorker" in navigator) {
 }
 
 // ---------------------------------------------------------------- topo: sino e perfil
-export function montarTopo(perfil, { rotuloPapel, linhas = [], extras = [] }) {
+export function montarTopo(perfil, { rotuloPapel, linhas = [], extras = [], sino = true, instalavel = true }) {
   const topo = $("#topo-direita");
   topo.innerHTML = "";
   for (const x of extras) topo.append(x);
@@ -207,7 +209,9 @@ export function montarTopo(perfil, { rotuloPapel, linhas = [], extras = [] }) {
   bInst.onclick = instalar;
   const bSino = el('<button class="icone-topo sino" title="Notificações" aria-label="Notificações">🔔<span class="bolinha" hidden></span></button>');
   const bPerfil = el(`<button class="icone-topo perfil" title="Perfil" aria-label="Perfil">${avatar(perfil, "pequeno")}</button>`);
-  topo.append(bInst, bSino, bPerfil);
+  if (instalavel) topo.append(bInst);
+  if (sino) topo.append(bSino);
+  topo.append(bPerfil);
 
   bPerfil.onclick = (ev) => {
     ev.stopPropagation();
@@ -216,12 +220,14 @@ export function montarTopo(perfil, { rotuloPapel, linhas = [], extras = [] }) {
         <span class="selo">${esc(rotuloPapel)}</span></div></div>
       <dl class="perfil-dados">${linhas.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v || "—")}</dd></div>`).join("")}</dl>
       <button class="link-sair">↪ Sair</button>`, (p) => {
-      $(".link-sair", p).onclick = () => { sair(); location.href = "index.html"; };
+      $(".link-sair", p).onclick = () => { sair(); location.href = "entrar.html"; };
     });
   };
-  bSino.onclick = (ev) => { ev.stopPropagation(); abrirNotificacoes(bSino, perfil); };
-  atualizarSino(bSino, perfil);
-  setInterval(() => atualizarSino(bSino, perfil), 60000);
+  if (sino) {
+    bSino.onclick = (ev) => { ev.stopPropagation(); abrirNotificacoes(bSino, perfil); };
+    atualizarSino(bSino, perfil);
+    setInterval(() => atualizarSino(bSino, perfil), 60000);
+  }
   return { bSino };
 }
 

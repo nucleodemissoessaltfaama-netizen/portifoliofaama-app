@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Painel do administrador · Portfólio SALT-FAAMA</title>
+<meta name="theme-color" content="#0f0a5c">
+<link rel="icon" href="icones/icone-32.png">
+<link rel="stylesheet" href="css/estilo.css?v=4">
+</head>
+<body>
+<div class="tela-login">
+  <div class="cartao-login">
+    <img class="logo" src="icones/icone-192.png" alt="Portfólio SALT-FAAMA">
+    <h1>Painel do administrador</h1>
+    <p class="sub">Disciplinas, requisitos, turmas, professor e downloads</p>
+    <form id="v-entrar">
+      <label class="rotulo" for="e-email">E-mail</label>
+      <input id="e-email" class="campo" type="email" autocomplete="username" required>
+      <label class="rotulo" for="e-senha">Senha</label>
+      <div class="senha-caixa"><input id="e-senha" class="campo" type="password" autocomplete="current-password" required>
+        <button type="button" class="icone ver" aria-label="Mostrar senha">👁</button></div>
+      <label class="marcar-linha"><input type="checkbox" id="e-lembrar" checked> Manter-me conectado</label>
+      <button class="botao primario largo" style="margin-top:14px">Entrar</button>
+      <div class="links-login"><a class="link" href="index.html">← Voltar para os downloads</a></div>
+    </form>
+  </div>
+</div>
+<script type="module" src="js/entrar.js?v=4"></script>
+</body>
+</html>

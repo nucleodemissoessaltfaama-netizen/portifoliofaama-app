@@ -16,7 +16,7 @@ function crc32(bytes) {
 }
 
 // arquivos: [{ nome, dados: Uint8Array | string }]
-export function zipar(arquivos) {
+export function zipar(arquivos, tipo = "application/zip") {
   const enc = new TextEncoder();
   const partes = [], central = [];
   let pos = 0;
@@ -43,5 +43,5 @@ export function zipar(arquivos) {
   fim.setUint32(0, 0x06054b50, true);
   fim.setUint16(8, arquivos.length, true); fim.setUint16(10, arquivos.length, true);
   fim.setUint32(12, tamCentral, true); fim.setUint32(16, pos, true);
-  return new Blob([...partes, ...central, new Uint8Array(fim.buffer)], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+  return new Blob([...partes, ...central, new Uint8Array(fim.buffer)], { type: tipo });
 }
